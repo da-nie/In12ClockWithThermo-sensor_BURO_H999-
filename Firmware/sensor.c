@@ -53,16 +53,16 @@ static volatile uint32_t EnabledDataCounter=0;//счётчик наличия сигнала
 //прототипы функций
 //----------------------------------------------------------------------------------------------------
 
-void SENSOR_SetValue(int8_t temp,int8_t humidity);//задать показания
-void SENSOR_SetTimerOverflow(void);//установить флаг переполнения таймера
-void SENSOR_ResetTimerOverflow(void);//сбросить флаг переполнения таймера
-bool SENSOR_IsTimerOverflow(void);//получить, есть ли переполнение таймера
-uint16_t SENSOR_GetTimerValue(void);//получить значение таймера
-void SENSOR_ResetTimerValue(void);//сбросить значение таймера 
-BLOCK_TYPE SENSOR_GetBlockType(uint32_t counter,bool value);//получить тип блока
-void SENSOR_AddBit(bool state);//добавить бит данных
-void SENSOR_ResetData(void);//начать сборку данных заново
-void SENSOR_AnalizeCounter(uint32_t counter,bool value,MODE *mode);//анализ блока
+static void SENSOR_SetValue(int8_t temp,int8_t humidity);//задать показания
+static void SENSOR_SetTimerOverflow(void);//установить флаг переполнения таймера
+static void SENSOR_ResetTimerOverflow(void);//сбросить флаг переполнения таймера
+static bool SENSOR_IsTimerOverflow(void);//получить, есть ли переполнение таймера
+static uint16_t SENSOR_GetTimerValue(void);//получить значение таймера
+static void SENSOR_ResetTimerValue(void);//сбросить значение таймера 
+static BLOCK_TYPE SENSOR_GetBlockType(uint32_t counter,bool value);//получить тип блока
+static void SENSOR_AddBit(bool state);//добавить бит данных
+static void SENSOR_ResetData(void);//начать сборку данных заново
+static void SENSOR_AnalizeCounter(uint32_t counter,bool value,MODE *mode);//анализ блока
 
 //----------------------------------------------------------------------------------------------------
 //глобальные переменные

@@ -23,7 +23,7 @@ MY_PROGRAMMER_PORT = lpt1
 OPTIMIZATION_LEVEL = s
 
 #подключаемые модули
-SOURCE= output.c sensor.c rtc.c
+SOURCE= output.c sensor.c rtc.c keyboard.c
 
 #=======================================
 
