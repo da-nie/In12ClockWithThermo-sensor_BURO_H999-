@@ -8,9 +8,27 @@
 #include "keyboard.h"
 
 //----------------------------------------------------------------------------------------------------
+//перечисления
+//----------------------------------------------------------------------------------------------------
+
+//режимы работы главного цикла
+typedef enum
+{
+ MODE_CLOCK_HOUR_MIN=0,//режим отображения часов и минут
+ MODE_CLOCK_MIN_SEC,//режим отображения минут и секунд
+ MODE_SET_TIME_HOUR_TENS,//режим задания времени
+ MODE_SET_TIME_HOUR_UNITS,//режим задания времени
+ MODE_SET_TIME_MIN_TENS,//режим задания времени
+ MODE_SET_TIME_MIN_UNITS,//режим задания времени
+ MODE_CATHODE_CLEANING,//режим чистки катодов
+ MODE_TEMPERATURE_HUMIDITY//режим вывода температуры и влажности 
+} MODE;
+
+//----------------------------------------------------------------------------------------------------
 //прототипы функций
 //----------------------------------------------------------------------------------------------------
 void InitAVR(void);//инициализация контроллера
+MODE ModeSetTime(MODE mode);//режим установки времени
 void ModeClockHourMin(void);//режим отображения часов и минут
 void ModeClockMinSec(void);//режим отображения минут и секунд
 void ModeTemperatureHumidity(void);//режим отображения влажности и температуры
@@ -30,22 +48,13 @@ int main(void)
  InitAVR(); 
  sei();
  
- typedef enum
- {
-  MODE_CLOCK_HOUR_MIN=0,//режим отображения часов и минут
-  MODE_CLOCK_MIN_SEC,//режим отображения минут и секунд
-  MODE_SET_TIME,//режим задания времени
-  MODE_CATHODE_CLEANING,//режим чистки катодов
-  MODE_TEMPERATURE_HUMIDITY//режим вывода температуры и влажности 
- } MODE;
- 
  MODE mode=MODE_CLOCK_HOUR_MIN;
  
  while(1)
  {
   if (mode==MODE_CLOCK_HOUR_MIN) ModeClockHourMin();
   if (mode==MODE_CLOCK_MIN_SEC) ModeClockMinSec();
-  //if (mode==MODE_SET_TIME) ModeSetTime();
+  if (mode==MODE_SET_TIME_HOUR_TENS || mode==MODE_SET_TIME_HOUR_UNITS || mode==MODE_SET_TIME_MIN_TENS || mode==MODE_SET_TIME_MIN_UNITS ) mode=ModeSetTime(mode);
   //if (mode==MODE_CATHODE_CLEANING) ModeCathodeCleaning();
   if (mode==MODE_TEMPERATURE_HUMIDITY) ModeTemperatureHumidity(); 
   
@@ -62,11 +71,83 @@ int main(void)
    if (current_mode==MODE_CLOCK_HOUR_MIN || current_mode==MODE_CLOCK_MIN_SEC) mode=MODE_TEMPERATURE_HUMIDITY;
    if (current_mode==MODE_TEMPERATURE_HUMIDITY) mode=MODE_CLOCK_HOUR_MIN;   
   }
+  
+  if (KEYBOARD_GetKeyState(KEY_STAR)==true && KEYBOARD_GetKeyState(KEY_SHARP)==true)
+  {  
+   mode=MODE_SET_TIME_HOUR_TENS;
+   KEYBOARD_GetKeyPressedAndResetIt(KEY_STAR);
+   KEYBOARD_GetKeyPressedAndResetIt(KEY_SHARP);   
+  }  
   sei();
   
   _delay_ms(100);
  }
  return(0);
+}
+
+//----------------------------------------------------------------------------------------------------
+//режим установки времени
+//----------------------------------------------------------------------------------------------------
+MODE ModeSetTime(MODE mode)
+{
+ uint8_t position=0xff;
+ if (mode==MODE_SET_TIME_HOUR_TENS) position=0;
+ if (mode==MODE_SET_TIME_HOUR_UNITS) position=1;
+ if (mode==MODE_SET_TIME_MIN_TENS) position=2;
+ if (mode==MODE_SET_TIME_MIN_UNITS) position=3;
+
+ //переключаем разряды по кругу  
+ cli();
+ for(uint8_t n=0;n<4;n++)
+ {
+  if (NewDigit[n]==Digit[n])//разряд переключился
+  {   
+   if (n==position) 
+   {
+    NewDigit[n]++;
+	NewDigit[n]%=10;
+	ChangeDigitCounter[n]=0x1f;   
+   }
+  }
+ } 
+ KEY key=KEYBOARD_GetPressedKey();
+ sei();
+ if (key>=KEY_0 && key<=KEY_9)
+ {
+  if (position>=0 && position<4) 
+  {
+   cli();   
+   NewDigit[position]=key-KEY_0;
+   ChangeDigitCounter[position]=0x01;
+   sei();
+   if (position==0) mode=MODE_SET_TIME_HOUR_UNITS;
+   if (position==1) mode=MODE_SET_TIME_MIN_TENS;
+   if (position==2) mode=MODE_SET_TIME_MIN_UNITS;
+   if (position==3)
+   {
+    //устанавливаем время
+	cli();
+	uint8_t hour=NewDigit[0]*10+NewDigit[1];
+	uint8_t min=NewDigit[2]*10+NewDigit[3];
+	sei();
+	
+	if (hour>=24 || min>=60) mode=MODE_SET_TIME_HOUR_TENS;//такое время задать нельзя	
+	else
+	{
+     uint8_t sec=0;
+	 RTC_SetTime(hour,min,sec);
+     mode=MODE_CLOCK_HOUR_MIN;
+     KEYBOARD_GetKeyPressedAndResetIt(KEY_STAR);
+     KEYBOARD_GetKeyPressedAndResetIt(KEY_SHARP);	
+	}
+   }
+  }
+ }
+  
+ OUTPUT_OutputPercent(false);
+ OUTPUT_OutputMinus(false);
+ 
+ return(mode);
 }
 
 //----------------------------------------------------------------------------------------------------

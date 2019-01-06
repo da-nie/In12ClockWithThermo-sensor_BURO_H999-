@@ -65,9 +65,9 @@ typedef enum
 volatile static uint8_t KeyCounter[KEY_AMOUNT];//массив состояний клавиш (с гистерезисом)
 volatile static KEY_STATE KeyState[KEY_AMOUNT];//массив состояния клавиши
 
-static const uint8_t MAX_KEY_COUNTER_VALUE=64;//максимальное значение счётчика клавиши
+static const uint8_t MAX_KEY_COUNTER_VALUE=32;//максимальное значение счётчика клавиши
 static const uint8_t MIN_KEY_COUNTER_VALUE=0;//минимальное значение счётчика клавиши
-static const uint8_t KEY_PRESSED_MIN_COUNTER_VALUE=32;//минимальное значение счётчика, при котором клавиша считается нажатой
+static const uint8_t KEY_PRESSED_MIN_COUNTER_VALUE=16;//минимальное значение счётчика, при котором клавиша считается нажатой
 
 //----------------------------------------------------------------------------------------------------
 //прототипы функций
@@ -196,4 +196,15 @@ bool KEYBOARD_GetKeyPressedAndResetIt(KEY key)
   return(true);
  }
  return(false);
+}
+//----------------------------------------------------------------------------------------------------
+//получить нажатую кнопку
+//----------------------------------------------------------------------------------------------------
+KEY KEYBOARD_GetPressedKey(void)
+{
+ for(uint8_t n=0;n<KEY_AMOUNT;n++)
+ {
+  if (KEYBOARD_GetKeyPressedAndResetIt(n)==true) return(n); 
+ }
+ return(KEY_NONE);
 }

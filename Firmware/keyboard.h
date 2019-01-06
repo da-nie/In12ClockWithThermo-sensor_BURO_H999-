@@ -26,7 +26,8 @@ typedef enum
  KEY_9,
  KEY_STAR,
  KEY_SHARP,
- KEY_AMOUNT 
+ KEY_AMOUNT,
+ KEY_NONE
 } KEY;
 
 //----------------------------------------------------------------------------------------------------
@@ -36,5 +37,6 @@ void KEYBOARD_Init(void);//инициализация
 void KEYBOARD_Scan(void);//произвести сканирование клавиатуры
 bool KEYBOARD_GetKeyState(KEY key);//получить состояние клавиши
 bool KEYBOARD_GetKeyPressedAndResetIt(KEY key);//получить, было ли нажатие клавиши с отпусканием и сбросить флаг этого состояния
+KEY KEYBOARD_GetPressedKey(void);//получить нажатую кнопку
 
 #endif
