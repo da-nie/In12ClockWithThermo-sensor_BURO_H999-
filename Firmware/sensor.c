@@ -32,7 +32,9 @@ typedef enum
 //глобальные переменные
 //----------------------------------------------------------------------------------------------------
 static const uint16_t MAX_TIMER_INTERVAL_VALUE=0xFFFF;//максимальное значение интервала таймера
+static const uint16_t MAX_TIMER_ENABLED_COUNTER_INTERVAL_VALUE=0xFF;//максимальное значение интервала таймера наличия данных
 static const uint32_t TIMER_FREQUENCY_HZ=31250UL;//частота таймера
+static const uint32_t TIMER_ENABLED_COUNTER_FREQUENCY_HZ=31250UL;//частота таймера наличия данных
 static volatile bool TimerOverflow=false;//было ли переполнение таймера
 
 static uint8_t Buffer[20];//буфер сборки полубайта
@@ -42,12 +44,15 @@ static volatile int8_t CurrentTemp=0;//температура
 static volatile int8_t CurrentHumidity=0;//влажность
 static volatile uint32_t EnabledDataCounter=0;//счётчик наличия сигнала
 
+static volatile uint8_t LastTemp=0;//старое значение температуры
+static volatile uint8_t LastHudimity=0;//старое значение влажности
+
 //----------------------------------------------------------------------------------------------------
 //макроопределения
 //----------------------------------------------------------------------------------------------------
 
 //максимальное значение счётчика наличия сигнала датчика
-#define MAX_ENABLED_DATA_COUNTER ((TIMER_FREQUENCY_HZ*60*2)/MAX_TIMER_INTERVAL_VALUE)
+#define MAX_ENABLED_DATA_COUNTER ((TIMER_ENABLED_COUNTER_FREQUENCY_HZ*60*5)/MAX_TIMER_ENABLED_COUNTER_INTERVAL_VALUE)
 
 //----------------------------------------------------------------------------------------------------
 //прототипы функций
@@ -93,9 +98,9 @@ void SENSOR_Init(void)
  //COM1A1-COM1A0 - состояние вывода OC1A
  //COM1B1-COM1B0 - состояние вывода OC1B 
  //WGM11-WGM10 - режим работы таймера
- TCCR1B=(0<<WGM13)|(0<<WGM12)|(0<<CS12)|(1<<CS11)|(1<<CS10)|(0<<ICES1)|(0<<ICNC1);
+ TCCR1B=(0<<WGM13)|(0<<WGM12)|(1<<CS12)|(0<<CS11)|(0<<CS10)|(0<<ICES1)|(0<<ICNC1); 
  //WGM13-WGM12 - режим работы таймера
- //CS12-CS10 - управление тактовым сигналом (выбран режим деления тактовых импульсов на 64 (частота таймера 31250 Гц))
+ //CS12-CS10 - управление тактовым сигналом (выбран режим деления тактовых импульсов на 256 (частота таймера 31250 Гц))
  //ICNC1 - управление схемой подавления помех блока захвата
  //ICES1 - выбор активного фронта сигнала захвата
  TCNT1=0;//начальное значение таймера
@@ -123,10 +128,25 @@ bool SENSOR_GetValue(int8_t *temp,int8_t *humidity)
 //----------------------------------------------------------------------------------------------------
 void SENSOR_SetValue(int8_t temp,int8_t humidity)
 {
+ cli(); 
+ if (temp==LastTemp && humidity==LastHudimity)//только если предыдущее значение совпадает с принятым делаем смену показаний температуры
+ { 
+  CurrentTemp=temp;
+  CurrentHumidity=humidity;
+  EnabledDataCounter=MAX_ENABLED_DATA_COUNTER;
+ }
+ LastTemp=temp;
+ LastHudimity=humidity; 
+ sei();
+}
+
+//----------------------------------------------------------------------------------------------------
+//уменьшить счётчик наличия данных
+//----------------------------------------------------------------------------------------------------
+void SENSOR_DecrementEnabledDataCounter(void)
+{
  cli();
- CurrentTemp=temp;
- CurrentHumidity=humidity;
- EnabledDataCounter=1000;//MAX_ENABLED_DATA_COUNTER;
+ if (EnabledDataCounter>0) EnabledDataCounter--;
  sei();
 }
 
@@ -137,7 +157,6 @@ void SENSOR_SetTimerOverflow(void)
 {
  cli();
  TimerOverflow=true;
- //if (EnabledDataCounter>0) EnabledDataCounter--;
  sei();
 }
 //----------------------------------------------------------------------------------------------------
@@ -187,14 +206,14 @@ void SENSOR_ResetTimerValue(void)
 //----------------------------------------------------------------------------------------------------
 BLOCK_TYPE SENSOR_GetBlockType(uint32_t counter,bool value)
 { 
- static const uint32_t DIVIDER_MIN=(TIMER_FREQUENCY_HZ*12)/44100UL;
- static const uint32_t DIVIDER_MAX=(TIMER_FREQUENCY_HZ*25)/44100UL;
- static const uint32_t ZERO_MIN=(TIMER_FREQUENCY_HZ*80)/44100UL;
- static const uint32_t ZERO_MAX=(TIMER_FREQUENCY_HZ*100)/44100UL;
- static const uint32_t ONE_MIN=(TIMER_FREQUENCY_HZ*160)/44100UL;
- static const uint32_t ONE_MAX=(TIMER_FREQUENCY_HZ*200)/44100UL;
- static const uint32_t SYNCHRO_MIN=(TIMER_FREQUENCY_HZ*320)/44100UL;
- static const uint32_t SYNCHRO_MAX=(TIMER_FREQUENCY_HZ*400)/44100UL;
+ static const uint32_t DIVIDER_MIN=(TIMER_FREQUENCY_HZ*(12))/44100UL;
+ static const uint32_t DIVIDER_MAX=(TIMER_FREQUENCY_HZ*(25))/44100UL;
+ static const uint32_t ZERO_MIN=(TIMER_FREQUENCY_HZ*(80-15))/44100UL;
+ static const uint32_t ZERO_MAX=(TIMER_FREQUENCY_HZ*(100+15))/44100UL;
+ static const uint32_t ONE_MIN=(TIMER_FREQUENCY_HZ*(160-15))/44100UL;
+ static const uint32_t ONE_MAX=(TIMER_FREQUENCY_HZ*(200+15))/44100UL;
+ static const uint32_t SYNCHRO_MIN=(TIMER_FREQUENCY_HZ*(320-15))/44100UL;
+ static const uint32_t SYNCHRO_MAX=(TIMER_FREQUENCY_HZ*(400+15))/44100UL;
  
 
  if (counter>DIVIDER_MIN && counter<DIVIDER_MAX) return(BLOCK_TYPE_DIVIDER);//разделитель
@@ -286,9 +305,14 @@ void SENSOR_AnalizeCounter(uint32_t counter,bool value,MODE *mode)
   uint8_t key=(Buffer[8]>>3)&0x01;
   uint8_t humidity=(Buffer[7]<<4)|(Buffer[6]);//влажность
   int16_t temp=(Buffer[5]<<8)|(Buffer[4]<<4)|(Buffer[3]);//температура в десятых градуса Фаренгейта со смещением на 50 Фаренгейтов
-  
+  //переводим в Цельсии умноженные на 10.
   temp=(temp-320)*5/9-500;
-  //требуется добавить округление
+  //округляем
+  int16_t r=temp;
+  if (r<0) r=-r;
+  r%=10;
+  if (r>=5 && temp>0) temp+=10;
+  if (r>=5 && temp<0) temp-=10;  
     
   SENSOR_SetValue((int8_t)(temp/10),humidity);
   
@@ -324,7 +348,7 @@ void SENSOR_AnalizeCounter(uint32_t counter,bool value,MODE *mode)
 //----------------------------------------------------------------------------------------------------
 ISR(TIMER1_OVF_vect)
 {   
- SENSOR_SetTimerOverflow();
+ SENSOR_SetTimerOverflow(); 
 } 
  
 //----------------------------------------------------------------------------------------------------

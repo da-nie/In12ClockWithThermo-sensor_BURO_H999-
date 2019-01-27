@@ -319,6 +319,7 @@ ISR(TIMER2_OVF_vect)
 {
  TCNT2=0;
  KEYBOARD_Scan();
+ SENSOR_DecrementEnabledDataCounter();
  
  static uint8_t cnt=0;
  cnt++;

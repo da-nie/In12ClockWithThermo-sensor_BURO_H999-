@@ -13,5 +13,6 @@
 //----------------------------------------------------------------------------------------------------
 void SENSOR_Init(void);//инициализация
 bool SENSOR_GetValue(int8_t *temp,int8_t *humidity);//получить показания
+void SENSOR_DecrementEnabledDataCounter(void);//уменьшить счётчик наличия данных
 
 #endif
