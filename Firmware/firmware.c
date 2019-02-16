@@ -6,6 +6,7 @@
 #include "sensor.h"
 #include "rtc.h"
 #include "keyboard.h"
+#include "watchdog.h"
 
 //----------------------------------------------------------------------------------------------------
 //перечисления
@@ -32,30 +33,54 @@ MODE ModeSetTime(MODE mode);//режим установки времени
 void ModeClockHourMin(void);//режим отображения часов и минут
 void ModeClockMinSec(void);//режим отображения минут и секунд
 void ModeTemperatureHumidity(void);//режим отображения влажности и температуры
+void CathodeCleaning(void);//режим очистки катодов индикаторов
 
 //----------------------------------------------------------------------------------------------------
 //глобальные переменные
 //----------------------------------------------------------------------------------------------------
+
+static const uint8_t CATHODE_CLEANING_COUNTER_MAX_VALUE_SEC=180;//количество секунд до очистки катодов индикаторов
+
 volatile uint8_t Digit[4]={0,0,0,0};//текущие отображаемые цифры
 volatile uint8_t NewDigit[4]={0,0,0,0};//новые отображаемые цифры
 volatile uint8_t ChangeDigitCounter[4]={0,0,0,0};//счётчик перехода от старых к новым цифрам
+volatile uint8_t CathodeCleaningCounter=0;//счётчик времени до включения режима очистки катодов
+
 
 //----------------------------------------------------------------------------------------------------
 //основная функция программы
 //----------------------------------------------------------------------------------------------------
 int main(void)
 {
- InitAVR(); 
+ InitAVR();
+ 
+ WDT_Reset();
+ _delay_ms(500);
+ WDT_WatchDogOff();
+ WDT_WatchDogOn();
+ 
+ CathodeCleaningCounter=CATHODE_CLEANING_COUNTER_MAX_VALUE_SEC;
+ 
  sei();
  
  MODE mode=MODE_CLOCK_HOUR_MIN;
+ MODE last_mode=mode; 
  
  while(1)
  {
+  WDT_Reset(); 
   if (mode==MODE_CLOCK_HOUR_MIN) ModeClockHourMin();
   if (mode==MODE_CLOCK_MIN_SEC) ModeClockMinSec();
   if (mode==MODE_SET_TIME_HOUR_TENS || mode==MODE_SET_TIME_HOUR_UNITS || mode==MODE_SET_TIME_MIN_TENS || mode==MODE_SET_TIME_MIN_UNITS ) mode=ModeSetTime(mode);
-  //if (mode==MODE_CATHODE_CLEANING) ModeCathodeCleaning();
+  if (mode==MODE_CATHODE_CLEANING)
+  {
+   CathodeCleaning();
+   mode=last_mode;
+   cli();
+   CathodeCleaningCounter=CATHODE_CLEANING_COUNTER_MAX_VALUE_SEC;
+   sei();
+   continue;
+  }
   if (mode==MODE_TEMPERATURE_HUMIDITY) ModeTemperatureHumidity(); 
   
   MODE current_mode=mode;  
@@ -77,7 +102,12 @@ int main(void)
    mode=MODE_SET_TIME_HOUR_TENS;
    KEYBOARD_GetKeyPressedAndResetIt(KEY_STAR);
    KEYBOARD_GetKeyPressedAndResetIt(KEY_SHARP);   
-  }  
+  } 
+  if (CathodeCleaningCounter==0 && mode!=MODE_CATHODE_CLEANING)
+  {
+   last_mode=mode;
+   mode=MODE_CATHODE_CLEANING;   
+  } 
   sei();
   
   _delay_ms(100);
@@ -244,6 +274,32 @@ void ModeTemperatureHumidity(void)
   
  OUTPUT_OutputPercent(true);    
 }
+//----------------------------------------------------------------------------------------------------
+//режим очистки катодов индикаторов
+//----------------------------------------------------------------------------------------------------
+void CathodeCleaning(void)
+{
+ for(uint8_t n=0;n<10;n++)
+ {
+  cli();
+  for(uint8_t m=0;m<4;m++)
+  {
+   ChangeDigitCounter[m]=0x1f;
+   NewDigit[m]=n;
+  }
+  sei();
+  WDT_Reset();
+  _delay_ms(200);
+  WDT_Reset();
+  _delay_ms(200);
+  WDT_Reset();
+  _delay_ms(200);
+  WDT_Reset();
+  _delay_ms(200);
+  WDT_Reset();
+  _delay_ms(200);
+ }
+}
 
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -294,7 +350,7 @@ ISR(TIMER0_OVF_vect)
  uint8_t mask=0; 
  
  mask=(1<<weight);
- TCNT0=0xff- mask;
+ TCNT0=0xff-mask;
  weight++;
  if (weight==5) weight=0; 
  
@@ -313,18 +369,26 @@ ISR(TIMER0_OVF_vect)
 }
 
 //----------------------------------------------------------------------------------------------------
-//обработчик вектора прерывания таймера T02 (8-ми разрядный таймер) по переполнению
+//обработчик вектора прерывания таймера T2 (8-ми разрядный таймер) по переполнению
 //----------------------------------------------------------------------------------------------------
 ISR(TIMER2_OVF_vect)
 {
+ //таймер вызывается 122.0703125 раза в секунду
+
  TCNT2=0;
  KEYBOARD_Scan();
  SENSOR_DecrementEnabledDataCounter();
  
- static uint8_t cnt=0;
- cnt++;
- cnt&=1;
- if (cnt!=0) return;
+ static uint8_t tick=0;
+ 
+ tick++;
+ if (tick==122)//прошла секунда (примерно)
+ {
+  if (CathodeCleaningCounter>0) CathodeCleaningCounter--; 
+  tick=0;
+ }
+ 
+ if ((tick&0x01)!=0) return;
  
  for(uint8_t n=0;n<4;n++)
  {

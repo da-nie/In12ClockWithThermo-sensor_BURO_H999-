@@ -44,15 +44,14 @@ static volatile int8_t CurrentTemp=0;//температура
 static volatile int8_t CurrentHumidity=0;//влажность
 static volatile uint32_t EnabledDataCounter=0;//счётчик наличия сигнала
 
-static volatile uint8_t LastTemp=0;//старое значение температуры
-static volatile uint8_t LastHudimity=0;//старое значение влажности
+static volatile uint8_t LastBuffer[3][10];//последние принятые данные
 
 //----------------------------------------------------------------------------------------------------
 //макроопределения
 //----------------------------------------------------------------------------------------------------
 
 //максимальное значение счётчика наличия сигнала датчика
-#define MAX_ENABLED_DATA_COUNTER ((TIMER_ENABLED_COUNTER_FREQUENCY_HZ*60*5)/MAX_TIMER_ENABLED_COUNTER_INTERVAL_VALUE)
+#define MAX_ENABLED_DATA_COUNTER ((TIMER_ENABLED_COUNTER_FREQUENCY_HZ*60*10)/MAX_TIMER_ENABLED_COUNTER_INTERVAL_VALUE)
 
 //----------------------------------------------------------------------------------------------------
 //прототипы функций
@@ -107,6 +106,11 @@ void SENSOR_Init(void)
  TIMSK|=(1<<TOIE1);//прерывание по переполнению таймера (таймер T1 шестнадцатибитный) 
  
  EnabledDataCounter=0;
+ 
+ for(uint8_t n=0;n<3;n++)
+ {
+  for(uint8_t m=0;m<10;m++) LastBuffer[n][m]=0; 
+ }
 }
 
 //----------------------------------------------------------------------------------------------------
@@ -129,14 +133,9 @@ bool SENSOR_GetValue(int8_t *temp,int8_t *humidity)
 void SENSOR_SetValue(int8_t temp,int8_t humidity)
 {
  cli(); 
- if (temp==LastTemp && humidity==LastHudimity)//только если предыдущее значение совпадает с принятым делаем смену показаний температуры
- { 
-  CurrentTemp=temp;
-  CurrentHumidity=humidity;
-  EnabledDataCounter=MAX_ENABLED_DATA_COUNTER;
- }
- LastTemp=temp;
- LastHudimity=humidity; 
+ CurrentTemp=temp;
+ CurrentHumidity=humidity;
+ EnabledDataCounter=MAX_ENABLED_DATA_COUNTER;
  sei();
 }
 
@@ -206,14 +205,14 @@ void SENSOR_ResetTimerValue(void)
 //----------------------------------------------------------------------------------------------------
 BLOCK_TYPE SENSOR_GetBlockType(uint32_t counter,bool value)
 { 
- static const uint32_t DIVIDER_MIN=(TIMER_FREQUENCY_HZ*(12))/44100UL;
- static const uint32_t DIVIDER_MAX=(TIMER_FREQUENCY_HZ*(25))/44100UL;
- static const uint32_t ZERO_MIN=(TIMER_FREQUENCY_HZ*(80-15))/44100UL;
- static const uint32_t ZERO_MAX=(TIMER_FREQUENCY_HZ*(100+15))/44100UL;
- static const uint32_t ONE_MIN=(TIMER_FREQUENCY_HZ*(160-15))/44100UL;
- static const uint32_t ONE_MAX=(TIMER_FREQUENCY_HZ*(200+15))/44100UL;
- static const uint32_t SYNCHRO_MIN=(TIMER_FREQUENCY_HZ*(320-15))/44100UL;
- static const uint32_t SYNCHRO_MAX=(TIMER_FREQUENCY_HZ*(400+15))/44100UL;
+ static const uint32_t DIVIDER_MIN=(TIMER_FREQUENCY_HZ*(5))/44100UL;
+ static const uint32_t DIVIDER_MAX=(TIMER_FREQUENCY_HZ*(35))/44100UL;
+ static const uint32_t ZERO_MIN=(TIMER_FREQUENCY_HZ*(80-25))/44100UL;
+ static const uint32_t ZERO_MAX=(TIMER_FREQUENCY_HZ*(100+25))/44100UL;
+ static const uint32_t ONE_MIN=(TIMER_FREQUENCY_HZ*(160-25))/44100UL;
+ static const uint32_t ONE_MAX=(TIMER_FREQUENCY_HZ*(200+25))/44100UL;
+ static const uint32_t SYNCHRO_MIN=(TIMER_FREQUENCY_HZ*(320-25))/44100UL;
+ static const uint32_t SYNCHRO_MAX=(TIMER_FREQUENCY_HZ*(400+25))/44100UL;
  
 
  if (counter>DIVIDER_MIN && counter<DIVIDER_MAX) return(BLOCK_TYPE_DIVIDER);//разделитель
@@ -300,7 +299,23 @@ void SENSOR_AnalizeCounter(uint32_t counter,bool value,MODE *mode)
    SENSOR_ResetData();
    return; 
   }
-    
+  //изменяем данные в буфере последних принятых данных
+  for(uint8_t n=1;n<3;n++)
+  {
+   for(uint8_t m=0;m<10;m++) LastBuffer[n-1][m]=LastBuffer[n][m];
+  }
+  for(uint8_t m=0;m<10;m++) LastBuffer[2][m]=Buffer[m];
+  //последние три раза должна быть принята одинаковая информация  
+  for(uint8_t m=0;m<10;m++) 
+  {
+   if (LastBuffer[0][m]!=LastBuffer[1][m] || LastBuffer[0][m]!=LastBuffer[2][m])
+   {
+    *mode=MODE_WAIT_SYNCHRO;
+    SENSOR_ResetData();
+    return;   
+   }
+  }  
+  
   uint8_t channel=Buffer[2]&0x03;
   uint8_t key=(Buffer[8]>>3)&0x01;
   uint8_t humidity=(Buffer[7]<<4)|(Buffer[6]);//влажность
@@ -311,9 +326,11 @@ void SENSOR_AnalizeCounter(uint32_t counter,bool value,MODE *mode)
   int16_t r=temp;
   if (r<0) r=-r;
   r%=10;
-  if (r>=5 && temp>0) temp+=10;
-  if (r>=5 && temp<0) temp-=10;  
-    
+  if (r>=5)
+  {
+   if (temp>0) temp+=10;
+          else temp-=10;    
+  }    
   SENSOR_SetValue((int8_t)(temp/10),humidity);
   
   *mode=MODE_WAIT_SYNCHRO;

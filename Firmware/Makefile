@@ -20,10 +20,10 @@ MY_PROGRAMMER_PORT = lpt1
 
 # Уровень оптимизации (может быть 0, 1, 2, 3, s)
 # 0 - выключает оптимизацию, s - оптимизирует размер файла
-OPTIMIZATION_LEVEL = 3
+OPTIMIZATION_LEVEL = 2
 
 #подключаемые модули
-SOURCE= output.c sensor.c rtc.c keyboard.c
+SOURCE= output.c sensor.c rtc.c keyboard.c watchdog.c
 
 #=======================================
 
